@@ -5,7 +5,7 @@ import re
 import sys
 import numpy as np
 import pandas as pd
-
+import datetime
 
 # ===========================
 #       Consts
@@ -16,15 +16,20 @@ KEEP_WEEKDAY_ONLY = True
 CNVRT_AGG_HR_TO_DIST = True
 PREDICT_BY_DIST = True
 TEST_PREDICT_DIST = PREDICT_BY_DIST
+FIRST_TEST_DOY = 109
+LAST_TEST_DOY = 112
+SEED = 1123456
 
 # ===========================
 #       Input
 # ===========================
-domain_id = 308132225
+domain_id = 1274926143 #[ 308132225, 1274926143] joy,western
 fn_domain_notifications_date = 'data/relevant_notification_90days_202104281022.csv'
 fn_domain_subscribers = 'data/all_subscribers_of_2domains_202105052203.csv'
-fn_domain_subscribers_click = 'data/joy_land_subscribers_notifications'
-
+if domain_id == 308132225:
+    fn_domain_subscribers_click = 'data/joy_land_subscribers_notifications'
+if domain_id == 1274926143:
+    fn_domain_subscribers_click = 'data/western_subscribers_notifications'
 
 # ===========================
 #       Input validation
@@ -137,11 +142,48 @@ def predict(df_dist_w_label, hr):
     ls_relevant_subscriber = df_dist_w_label[df_dist_w_label.is_open_sum > 0].subscriber_id
     return ls_subscriber_at_ts_hr, df_dist_w_label, ls_relevant_subscriber
 
+
+def predict_rand(df_dist_w_label, hr, doy, dow):
+    is_open_cols_sub = [col for col in df_dist_w_label.columns if (('is_open_' in str(col).lower()) and not(col=='is_open_sum') and not(('is_open_notify' in str(col).lower())))]
+    is_open_cols = is_open_cols_sub.copy()
+    is_open_cols_sub.append('subscriber_id')
+    df_dist = df_dist_w_label[is_open_cols].copy()
+    df_cp = df_dist_w_label.copy()
+
+    # todo return the df_dist_w_label  with a column of the prediction
+    df_cp['pred_doy'] = doy
+    df_cp['pred_dow'] = dow
+    df_cp['pred_hr'] = hr
+
+    #df_dist_w_label['pred'] = df_dist.idxmax(axis=1)
+    # returns ndarray np
+    rng = np.random.default_rng(seed=SEED)
+    N = 1
+    candidates = is_open_cols.copy()
+    distribution = np.random.uniform(low=0.0, high=1.0, size=len(candidates))
+    pred = rng.choice(a=candidates, p=distribution, size=min(N, len(candidates)), replace=False)
+
+    #candidates same size as distribution
+    #distribution - must be array of normalized values not function
+    #size is number of values to return
+    #replace is sampling with replacement
+
+    ls_subscriber_at_ts_hr = df_dist_w_label[df_dist_w_label['pred']=='is_open_'+str(hr)].subscriber_id
+    ls_relevant_subscriber = df_dist_w_label[df_dist_w_label.is_open_sum > 0].subscriber_id
+    return ls_subscriber_at_ts_hr, df_dist_w_label, ls_relevant_subscriber
+
 def test_predict(df_pred_ls, df_label, ls_relevant_subscriber):
-    df = df_label[df_label.subscriber_id.isin(ls_relevant_subscriber)].copy()
+    df = df_label[df_label.subscriber_id.isin(ls_relevant_subscriber)].copy() #TODO add columns 1 for predicted and for relevant
     print( 'TP: ' , np.sum(df_label[df_label.subscriber_id.isin(df_pred_ls)][df_label.columns[1]]>0))
     pred_prec_a = np.sum(df_label[df_label.subscriber_id.isin(df_pred_ls)][df_label.columns[1]] > 0) / df_pred_ls.shape[0]
     true_prec_a = np.sum(df_label[df_label.columns[1]] > 0) / df_label.shape[0]
+
+    col_name_pred = df_label.columns[1]
+    df_label_cp = df_label.copy()
+    df_label_cp['is_relevant'] = 0
+    df_label_cp.loc[df_label_cp.subscriber_id.isin(ls_relevant_subscriber),'is_relevant'] = 1
+    df_label_cp['pred_'+ col_name_pred] = 0
+    df_label_cp.loc[df_label_cp.subscriber_id.isin(df_pred_ls), 'pred_'+ col_name_pred] = 1
 
     tp_a = np.sum(df_label[df_label.subscriber_id.isin(df_pred_ls)][df_label.columns[1]]>0)
     fp_a = np.sum(df_label[df_label.subscriber_id.isin(df_pred_ls)][df_label.columns[1]]==0)
@@ -155,14 +197,19 @@ def test_predict(df_pred_ls, df_label, ls_relevant_subscriber):
     fn = np.sum(df[df.subscriber_id.isin(df_pred_ls) == False][df.columns[1]] > 0)
 
     recall_pred = tp/(tp+fn)
-    recall_pred_a = tp/(tp+fn_a)
+    recall_pred_a = tp_a/(tp_a+fn_a)
+    prec = tp / (tp + fp)
+
+    F1 =  2 * prec * recall_pred/(prec + recall_pred)# 2*(precision * recall)/(precision + recall)
+
     print('true_prec: ', true_prec, '\npred_prec: ', pred_prec,
           '\ntrue_prec_a: ', true_prec_a, '\npred_prec_a: ', pred_prec_a,
           '\ntp, fp, tn, fn: ', tp, fp, tn, fn,
-          '\nprec: ', tp/(tp+fp))
+          '\nprec: ', prec,
+          '\nF1: ', F1)
     acc = (tp +tn)/(tp+fp+tn+fn)
 
-    return acc, pred_prec, true_prec, recall_pred, tp,fp,tn, fn, pred_prec_a, true_prec_a, recall_pred_a, tp_a, fp_a, tn_a, fn_a
+    return acc, pred_prec, true_prec, recall_pred, tp,fp,tn, fn, pred_prec_a, true_prec_a, recall_pred_a, tp_a, fp_a, tn_a, fn_a, F1, df_label_cp
 
 
 
@@ -214,6 +261,9 @@ k1k2_n_s_c.loc[:, 'is_notify'] = 1
 k1k2_n_s_c.loc[(k1k2_n_s_c.min_created_at>k1k2_n_s_c.send_at), 'is_notify'] = 0
 
 
+print('### domain_id:', domain_id, '\n### domain_name: ', domain_notifications_date[domain_notifications_date.domain_id==domain_id].domain_name.unique()
+      ,'\n### Active subscribers:' , len(active_domain_subscribers_click.subscriber_id.unique())
+      ,'\n### Total subscribers:' , curr_domain_subscribers.shape[0])
 
 if SPLIT_TRAIN_TEST_BY_DOY:
     # TODO for i in np.arange(SPLIT_TRAIN_TEST_BY_DOY, k1k2_n_s_c.ts_dayofyear.max()):
@@ -252,10 +302,10 @@ if CNVRT_AGG_HR_TO_DIST:
     df_train_dist = cnvrt_is_open_hr_agg_to_dist(df_train_agg_hr)
 
 # ===========================
-#       Predict
+#       Predict & Test
 # ===========================
 res = pd.DataFrame()
-for doy_val in range(109, 113):
+for doy_val in range(FIRST_TEST_DOY, LAST_TEST_DOY+1):
     if PREDICT_BY_DIST:
 
         # Get labels
@@ -274,16 +324,21 @@ for doy_val in range(109, 113):
 
             if TEST_PREDICT_DIST:
 
-                acc, pred_prec, true_prec, recall_pred, tp,fp,tn, fn, pred_prec_a, true_prec_a, recall_pred_a, tp_a, fp_a, tn_a, fn_a\
+                acc, pred_prec, true_prec, recall_pred, tp, fp, tn, fn, pred_prec_a, true_prec_a, recall_pred_a, tp_a, fp_a, tn_a, fn_a, F1, df_label_cp \
                     = test_predict(ls_subscriber_at_ts_hr, df_test2_noweekends_labels_hr[['subscriber_id', 'label_is_open_'+str(int(pred_ts_hour))]], ls_relevant_subscriber)
                 #x = [acc, pred_prec, true_prec, recall_pred, tp,fp,tn, fn, pred_prec_a, true_prec_a, recall_pred_a, tp_a, fp_a, tn_a, fn_a]
                 res1 = pd.DataFrame(
                     {'doy_val':[doy_val], 'pred_ts_hour': [pred_ts_hour], 'acc': [acc], 'pred_prec': [pred_prec], 'true_prec': [true_prec], 'recall_pred': [recall_pred], 'tp': [tp],
                      'fp': [fp], 'tn': [tn], 'fn': [fn], 'pred_prec_a': [pred_prec_a], 'true_prec_a': [true_prec_a],
-                     'recall_pred_a': [recall_pred_a], 'tp_a': [tp_a], 'fp_a': [fp_a], 'tn_a': [tn_a], 'fn_a': [fn_a]})
+                     'recall_pred_a': [recall_pred_a], 'tp_a': [tp_a], 'fp_a': [fp_a], 'tn_a': [tn_a], 'fn_a': [fn_a], 'F1': [F1]})
                 res = res.append(res1)
-res.to_csv('tmp_res.csv')
+                df_label_cp.to_csv('results/lbl_pred_domain_{}_ts_{}_doy_{}_hr_{}_F1_{}.csv'.format(domain_id, datetime.datetime.utcnow().date(), doy_val, str(int(pred_ts_hour)), str(F1)))
+res.to_csv('tmp_res_dm_{}_ts_{}.csv'.format(domain_id,datetime.datetime.utcnow().date()))
 print('# clicks without subscriber_id is ', np.sum(active_domain_subscribers_click.subscriber_id.isin(curr_domain_subscribers[curr_domain_subscribers.channel_type_id!=2].subscriber_id.unique())))
+print('### domain_id:', domain_id, '\n### domain_name: ', domain_notifications_date[domain_notifications_date.domain_id==domain_id].domain_name.unique()
+      ,'\n### Active subscribers:' , len(active_domain_subscribers_click.subscriber_id.unique())
+      ,'\n### Total subscribers:' , curr_domain_subscribers.shape[0]
+      ,'\n### Relevant subscribers in test:' , len(ls_relevant_subscriber))
 
 
 print('bbb')

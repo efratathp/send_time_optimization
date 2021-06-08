@@ -21,6 +21,7 @@ LAST_TEST_DOY = 112
 SEED = 1123456
 RUN_RAND = 0
 PREDICT_BY_SUBSCRIPTION_HOUR = 1
+HOUR_DELTA = 0
 # ===========================
 #       Input
 # ===========================
@@ -160,7 +161,7 @@ def predict_by_subscription_hour(df_dist_w_label, hr, doy=None, dow=None):
 
     # return the hour of subscription
 
-    pred_hrs = df_cp['min_created_at_hr'].apply(lambda h: 'is_open_' + str(int(h)))
+    pred_hrs = df_cp['min_created_at_hr'].apply(lambda h: 'is_open_' + str(int(h+HOUR_DELTA)))
 
     df_cp.loc[:,'pred']=pred_hrs.loc[:]
 

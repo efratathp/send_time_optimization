@@ -19,9 +19,12 @@ TEST_PREDICT_DIST = PREDICT_BY_DIST
 FIRST_TEST_DOY = 109
 LAST_TEST_DOY = 112
 SEED = 1123456
-RUN_RAND = 0
-PREDICT_BY_SUBSCRIPTION_HOUR = 1
+RUN_RAND = 0 #2
+PREDICT_BY_SUBSCRIPTION_HOUR = 0
+PREDICT_BY_SUBSCRIPTION_HOUR_RAND = 1
 HOUR_DELTA = 0
+IS_CLASSIFIER = 0
+
 # ===========================
 #       Input
 # ===========================
@@ -248,7 +251,8 @@ def test_predict(df_pred_ls, df_label, ls_relevant_subscriber):
     fp_a = np.sum(df_label[df_label.subscriber_id.isin(df_pred_ls)][df_label.columns[1]]==0)
     tn_a = np.sum(df_label[df_label.subscriber_id.isin(df_pred_ls)==False][df_label.columns[1]]==0)
     fn_a = np.sum(df_label[df_label.subscriber_id.isin(df_pred_ls)==False][df_label.columns[1]]>0)
-    pred_prec = np.sum(df[df.subscriber_id.isin(df_pred_ls)][df.columns[1]]>0) / df_pred_ls.shape[0]
+
+    #pred_prec = np.sum(df[df.subscriber_id.isin(df_pred_ls)][df.columns[1]]>0) / df_pred_ls.shape[0]
     true_prec = np.sum(df[df.columns[1]]>0) / df.shape[0]
     tp = np.sum(df[df.subscriber_id.isin(df_pred_ls)][df.columns[1]] > 0)
     fp = np.sum(df[df.subscriber_id.isin(df_pred_ls)][df.columns[1]] == 0)
@@ -257,9 +261,9 @@ def test_predict(df_pred_ls, df_label, ls_relevant_subscriber):
 
     recall_pred = tp/(tp+fn)
     recall_pred_a = tp_a/(tp_a+fn_a)
-    prec = tp / (tp + fp)
+    pred_prec = tp / (tp + fp)
 
-    F1 =  2 * prec * recall_pred/(prec + recall_pred)# 2*(precision * recall)/(precision + recall)
+    F1 =  2 * pred_prec * recall_pred/(pred_prec + recall_pred)# 2*(precision * recall)/(precision + recall)
 
     tp_nr = np.sum(df_nr[df_nr.subscriber_id.isin(df_pred_ls)][df_nr.columns[1]] > 0)
     fp_nr = np.sum(df_nr[df_nr.subscriber_id.isin(df_pred_ls)][df_nr.columns[1]] == 0)
@@ -268,14 +272,14 @@ def test_predict(df_pred_ls, df_label, ls_relevant_subscriber):
 
     prec_nr = tp_nr/(tp_nr+fp_nr)
     recall_nr = tp_nr/(tp_nr+fn_nr)
-    F1_nr = 2 * prec * recall_pred/(prec + recall_pred)# 2*(precision * recall)/(precision + recall)
+    F1_nr = 2 * prec_nr * recall_nr/(prec_nr + recall_nr)# 2*(precision * recall)/(precision + recall)
 
     #TODO all measure only not relevant subscribers
 
     print('true_prec: ', true_prec, '\npred_prec: ', pred_prec,
           '\ntrue_prec_a: ', true_prec_a, '\npred_prec_a: ', pred_prec_a,
           '\ntp, fp, tn, fn: ', tp, fp, tn, fn,
-          '\nprec: ', prec,
+#          '\nprec: ', prec,
           '\nF1: ', F1)
     acc = (tp +tn)/(tp+fp+tn+fn)
 
@@ -332,7 +336,8 @@ k1k2_n_s_c.loc[:, 'is_open'] = 0
 k1k2_n_s_c.loc[k1k2_n_s_c.cnt_clicks>0, 'is_open'] = 1
 k1k2_n_s_c.loc[:, 'is_notify'] = 1
 k1k2_n_s_c.loc[(k1k2_n_s_c.min_created_at>k1k2_n_s_c.send_at), 'is_notify'] = 0
-
+# Not TODO remove is_notify == 0 from data
+#k1k2_n_s_c = k1k2_n_s_c[k1k2_n_s_c.is_notify>0].copy()
 
 print('### domain_id:', domain_id, '\n### domain_name: ', domain_notifications_date[domain_notifications_date.domain_id==domain_id].domain_name.unique()
       ,'\n### Active subscribers:' , len(active_domain_subscribers_click.subscriber_id.unique())
@@ -341,11 +346,9 @@ print('### domain_id:', domain_id, '\n### domain_name: ', domain_notifications_d
 if SPLIT_TRAIN_TEST_BY_DOY:
     # TODO for i in np.arange(SPLIT_TRAIN_TEST_BY_DOY, k1k2_n_s_c.ts_dayofyear.max()):
     #   df_test1, df_train1 = split_by_day_of_year(k1k2_n_s_c, i)
-    # df_test2, df_train1, df_train1_label = split_by_day_of_year(k1k2_n_s_c, SPLIT_TRAIN_TEST_BY_DOY)
-    # df_test21, df_test1, df_test1_label = split_by_day_of_year(df_test2, 116)
 
     # TODO change name df_test_2, df_test21, df_test_1 to df_aftr_split1, df_aftr_split2, df_between_split1_and2, respectively
-    df_test2, df_train1 = split_by_day_of_year(k1k2_n_s_c, SPLIT_TRAIN_TEST_BY_DOY)
+    df_test2, df_train1 = split_by_day_of_year(k1k2_n_s_c, SPLIT_TRAIN_TEST_BY_DOY) # returns doy SPLIT_TRAIN_TEST_BY_DOY-118, doy 83-(SPLIT_TRAIN_TEST_BY_DOY-1)
     df_test21, df_test1 = split_by_day_of_year(df_test2, 116)
 
 #Q:What are the strongest days of the week?
@@ -360,8 +363,8 @@ if KEEP_WEEKDAY_ONLY:
 
 # ====================== Apply Aggs ==========================
 
-df_test_agg = agg_df_by_subscriber_dow_hr(df_test)
-df_train_agg = agg_df_by_subscriber_dow_hr(df_train)
+df_test_agg_dow_hr = agg_df_by_subscriber_dow_hr(df_test)
+df_train_agg_dow_hr = agg_df_by_subscriber_dow_hr(df_train)
 
 df_test_agg_hr = agg_df_by_subscriber_hr(df_test)
 df_train_agg_hr = agg_df_by_subscriber_hr(df_train)
@@ -373,6 +376,15 @@ df_train_agg_hr = agg_df_by_subscriber_hr(df_train)
 if CNVRT_AGG_HR_TO_DIST:
     df_test_dist = cnvrt_is_open_hr_agg_to_dist(df_test_agg_hr)
     df_train_dist = cnvrt_is_open_hr_agg_to_dist(df_train_agg_hr)
+    if PREDICT_BY_SUBSCRIPTION_HOUR_RAND:
+        is_open_cols_fst_hr = [col for col in df_train_agg_hr.columns if (('is_open_' in str(col).lower()) and not (col == 'is_open_sum') and not (('is_open_notify' in str(col).lower())))]
+        df_train_agg_hr_w_fst = df_train_agg_hr.copy()
+        for i in is_open_cols_fst_hr:
+
+            #active_subscriber_min_created[(active_subscriber_min_created.min_created_at_hr == int(i.replace('is_open_', '')))].subscriber_id
+            df_train_agg_hr_w_fst.loc[df_train_agg_hr_w_fst.subscriber_id.isin(active_subscriber_min_created[(active_subscriber_min_created.min_created_at_hr == int(i.replace('is_open_', '')))].subscriber_id), i] = df_train_agg_hr_w_fst.loc[df_train_agg_hr_w_fst.subscriber_id.isin(active_subscriber_min_created[(active_subscriber_min_created.min_created_at_hr == int(i.replace('is_open_','')))].subscriber_id), i] + 1
+
+        df_train_dist_w_fst_hr = cnvrt_is_open_hr_agg_to_dist(df_train_agg_hr_w_fst)
 
 # ===========================
 #       Predict & Test
@@ -388,20 +400,27 @@ for doy_val in range(FIRST_TEST_DOY, LAST_TEST_DOY+1):
         t = df_test2[df_test2.ts_dayofyear==doy_val]
         t_noweekend = df_test2_noweekends[df_test2_noweekends.ts_dayofyear == doy_val]
 
-        df_test2_labels_hr = create_label_columns_hr(t)
-        df_test2_noweekends_labels_hr = create_label_columns_hr(t_noweekend)
+        df_test2_labels_hr = create_label_columns_hr(t[t.is_notify>0])
+        df_test2_noweekends_labels_hr = create_label_columns_hr(t_noweekend[t_noweekend.is_notify>0])
 
         #pred_ts_hour = 14
         for pred_ts_hour in t.ts_hour.unique():
             ls_subscriber_at_ts_hr, df_train_dist_pred, ls_relevant_subscriber = predict(df_train_dist, int(pred_ts_hour))
 
             if RUN_RAND:
+                if RUN_RAND == 2:
+                    is_open_cols_tmp = [col for col in df_train_dist.columns if (('is_open_' in str(col).lower()) and not(col=='is_open_sum') and not(('is_open_notify' in str(col).lower())))]
+                    df_train_dist[is_open_cols_tmp] = 0
                 ls_subscriber_at_ts_hr, df_train_dist_pred, ls_relevant_subscriber = predict_rand(df_train_dist, int(pred_ts_hour))
 
             if PREDICT_BY_SUBSCRIPTION_HOUR:
                 #df_test_dist_ = pd.merge(df_test_dist, active_subscriber_min_created, on='subscriber_id', suffixes=('', '_s'))
                 df_train_dist_ = pd.merge(df_train_dist, active_subscriber_min_created, on='subscriber_id', suffixes=('', '_s'))
                 ls_subscriber_at_ts_hr, df_train_dist_pred, ls_relevant_subscriber = predict_by_subscription_hour(df_train_dist_, int(pred_ts_hour))
+
+            if PREDICT_BY_SUBSCRIPTION_HOUR_RAND:
+                ls_subscriber_at_ts_hr, df_train_dist_pred, ls_relevant_subscriber = predict_rand(df_train_dist_w_fst_hr, int(pred_ts_hour))
+
 
 
 
@@ -419,10 +438,10 @@ for doy_val in range(FIRST_TEST_DOY, LAST_TEST_DOY+1):
                      'recall_pred_a': [recall_pred_a], 'tp_a': [tp_a], 'fp_a': [fp_a], 'tn_a': [tn_a], 'fn_a': [fn_a], 'F1': [F1],
                      'tp_nr' : [tp_nr], 'fp_nr' : [fp_nr], 'tn_nr' : [tn_nr], 'fn_nr' : [fn_nr], 'prec_nr' : [prec_nr], 'recall_nr' : [recall_nr], 'F1_nr' : [F1_nr]})
                 res = res.append(res1)
-                df_label_cp.to_csv('results/lbl_pred_rnd'+ str(RUN_RAND) + str(PREDICT_BY_SUBSCRIPTION_HOUR) +'_domain_{}_ts_{}_doy_{}_hr_{}_F1_{}.csv'.format(domain_id, datetime.datetime.utcnow().date(), doy_val, str(int(pred_ts_hour)), str(F1)))
-                df_train_dist_pred.to_csv('results/df_pred_rnd' + str(RUN_RAND) + str(PREDICT_BY_SUBSCRIPTION_HOUR) + '_domain_{}_ts_{}_doy_{}_hr_{}_F1_{}.csv' \
+                df_label_cp.to_csv('results/lbl_pred_rnd'+ str(RUN_RAND) + str(PREDICT_BY_SUBSCRIPTION_HOUR) + str(PREDICT_BY_SUBSCRIPTION_HOUR_RAND) + '_domain_{}_ts_{}_doy_{}_hr_{}_F1_{}.csv'.format(domain_id, datetime.datetime.utcnow().date(), doy_val, str(int(pred_ts_hour)), str(F1)))
+                df_train_dist_pred.to_csv('results/df_pred_rnd' + str(RUN_RAND) + str(PREDICT_BY_SUBSCRIPTION_HOUR) + str(PREDICT_BY_SUBSCRIPTION_HOUR_RAND) + '_domain_{}_ts_{}_doy_{}_hr_{}_F1_{}.csv' \
                         .format(domain_id, datetime.datetime.utcnow().date(), doy_val, str(int(pred_ts_hour)), str(F1)[:5]))
-res.to_csv('tmp_res_rnd'+ str(RUN_RAND) + str(PREDICT_BY_SUBSCRIPTION_HOUR) +'_dm_{}_ts_{}.csv'.format(domain_id,datetime.datetime.utcnow().date()))
+res.to_csv('tmp_res_rnd'+ str(RUN_RAND) + str(PREDICT_BY_SUBSCRIPTION_HOUR) + str(PREDICT_BY_SUBSCRIPTION_HOUR_RAND) + '_dm_{}_ts_{}.csv'.format(domain_id,datetime.datetime.utcnow().date()))
 print('# clicks without subscriber_id is ', np.sum(active_domain_subscribers_click.subscriber_id.isin(curr_domain_subscribers[curr_domain_subscribers.channel_type_id!=2].subscriber_id.unique())))
 print('### domain_id:', domain_id, '\n### domain_name: ', domain_notifications_date[domain_notifications_date.domain_id==domain_id].domain_name.unique()
       ,'\n### Active subscribers:' , len(active_domain_subscribers_click.subscriber_id.unique())

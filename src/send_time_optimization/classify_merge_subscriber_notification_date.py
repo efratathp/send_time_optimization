@@ -29,10 +29,10 @@ HOUR_DELTA = 0
 IS_CLASSIFIER = 2
 DELTA_DAYS = 21
 DELTA_CLASSIFIER_LABELS = 7
-IS_CLASSIFIER_ALL = 1 # 1 - ALL ; 2 - NON HISTORICAL ; 3 - ONLY HISTORICAL
 IS_CLASSIFIER_DAILY = 0
-IS_CLASSIFIER_THRESH = [0.2, 0.05] # None
-model_ = 'MODEL_XGB'
+IS_CLASSIFIER_ALL = 1 # 1 - ALL ; 2 - NON HISTORICAL ; 3 - ONLY HISTORICAL
+IS_CLASSIFIER_THRESH = [0.3, 0.05] # None # 0.1
+model_ = 'MODEL_XGB' # 'MODEL_CAT'
 
 # ===========================
 #       Input
@@ -248,7 +248,7 @@ def predict_by_model(df_test_X_Y, hr, doy=None, dow=None, df_train_X_Y=None, run
     #att_col_names = [col for col in df_train_X_Y.columns if
     #                 ((col.lower() != 'is_open') and (col.lower() != 'subscriber_id'))]
     label_col_name = 'is_open'
-    #IS_CLASSIFIER_THRESH = 0.1
+    # TODO generalize this process to train a model without predicting
     if not(run_model): # Need to train new model
         if att_col_names is None:
             if not(df_train_X_Y is None):
@@ -259,7 +259,7 @@ def predict_by_model(df_test_X_Y, hr, doy=None, dow=None, df_train_X_Y=None, run
         if not(df_train_X_Y is None):
             X = df_train_X_Y[att_col_names].copy()
             Y = df_train_X_Y[label_col_name].copy()
-
+        # TODO generalize this to be .set_model_config()
         if model_ == 'MODEL_XGB':
             run_model = XGBClassifier(
                 learning_rate=0.1,
@@ -273,6 +273,27 @@ def predict_by_model(df_test_X_Y, hr, doy=None, dow=None, df_train_X_Y=None, run
                 scale_pos_weight=1,
                 seed=27)
             model_name = 'Xgb'
+        elif model_ == 'MODEL_XGB_RANK':
+            run_model = XGBClassifier(
+                learning_rate=0.1,
+                n_estimators=1000,
+                max_depth=4,
+                min_child_weight=10,
+                gamma=0,
+                colsample_bytree=0.8,
+                objective="rank:pairwise",  # objective='binary:logistic'
+                nthread=4,
+                scale_pos_weight=1,
+                seed=27)
+            model_name = 'XgbRnk'
+        elif model_ == 'MODEL_CAT':
+            run_model = CatBoostClassifier(iterations=2,
+                                       depth=2,
+                                       learning_rate=1,
+                                       loss_function='Logloss',
+                                       verbose=True)
+            cat_features = [] # index of ts_dayofweek
+            model_name = 'CatXgb'
         run_model.fit(X, Y)
 
     if run_model and att_col_names:
@@ -285,7 +306,7 @@ def predict_by_model(df_test_X_Y, hr, doy=None, dow=None, df_train_X_Y=None, run
         if IS_CLASSIFIER_THRESH :
             # Y_test_pred[:]= 0
             # Adds 1's to predicted based on proba
-            if len(IS_CLASSIFIER_THRESH)==1:
+            if type(IS_CLASSIFIER_THRESH)!=list:
                 Y_test_pred[Y_test_pred_proba[:,1] > IS_CLASSIFIER_THRESH] = 1
             elif len(IS_CLASSIFIER_THRESH)>1:
                 Y_test_pred[(Y_test_pred_proba[:,1] > IS_CLASSIFIER_THRESH[1]) &
@@ -526,7 +547,7 @@ if CNVRT_AGG_HR_TO_DIST:
         df_train_X_Y.to_csv('df_train_X_Y.csv')
         df_test_X_Y.to_csv('df_test_X_Y.csv')
 
-        # TODO XGB classifier
+        # TODO generalize this to be .set_model_config()
 
         if model_ == 'MODEL_XGB':
             run_model = XGBClassifier(
@@ -541,6 +562,26 @@ if CNVRT_AGG_HR_TO_DIST:
                 scale_pos_weight=1,
                 seed=27)
             model_name = 'Xgb'
+        elif model_ == 'MODEL_XGB_RANK':
+            run_model = XGBClassifier(
+                learning_rate=0.1,
+                n_estimators=1000,
+                max_depth=4,
+                min_child_weight=10,
+                gamma=0,
+                colsample_bytree=0.8,
+                objective="rank:pairwise",  # objective='binary:logistic'
+                nthread=4,
+                scale_pos_weight=1,
+                seed=27)
+            model_name = 'XgbRnk'
+        elif model_ == 'MODEL_CAT':
+            run_model = CatBoostClassifier(iterations=2,
+                                           depth=2,
+                                           learning_rate=1,
+                                           loss_function='Logloss',
+                                           verbose=True)
+            model_name = 'CatXgb'
 
         if IS_CLASSIFIER_ALL: # then move this after the for
             # TODO fix that att_col_names are the ones from the train not new every time
@@ -673,7 +714,8 @@ for doy_val in range(FIRST_TEST_DOY, LAST_TEST_DOY+1):
                           + str(IS_CLASSIFIER) \
                           + str(IS_CLASSIFIER_DAILY) \
                           + str(IS_CLASSIFIER_ALL) \
-                          + str(IS_CLASSIFIER_THRESH)
+                          + str(IS_CLASSIFIER_THRESH) \
+                          + '_' + model_name
 
                 df_label_cp.to_csv('results/lbl_pred_rnd' + exp_tag +  '_domain_{}_ts_{}_doy_{}_hr_{}_F1_{}.csv'.format(domain_id, datetime.datetime.utcnow().date(), doy_val, str(int(pred_ts_hour)), str(F1)))
                 df_train_dist_pred.to_csv('results/df_pred_rnd' + exp_tag + '_domain_{}_ts_{}_doy_{}_hr_{}_F1_{}.csv' \

@@ -8,7 +8,7 @@ import pandas as pd
 import datetime
 import xgboost as xgb
 from xgboost.sklearn import XGBClassifier
-
+from catboost import CatBoostClassifier, Pool
 
 # ===========================
 #       Consts
@@ -29,8 +29,9 @@ HOUR_DELTA = 0
 IS_CLASSIFIER = 2
 DELTA_DAYS = 21
 DELTA_CLASSIFIER_LABELS = 7
-IS_CLASSIFIER_ALL = 3
-IS_CLASSIFIER_DAILY = 2
+IS_CLASSIFIER_ALL = 1 # 1 - ALL ; 2 - NON HISTORICAL ; 3 - ONLY HISTORICAL
+IS_CLASSIFIER_DAILY = 0
+IS_CLASSIFIER_THRESH = [0.2, 0.05] # None
 model_ = 'MODEL_XGB'
 
 # ===========================
@@ -247,7 +248,7 @@ def predict_by_model(df_test_X_Y, hr, doy=None, dow=None, df_train_X_Y=None, run
     #att_col_names = [col for col in df_train_X_Y.columns if
     #                 ((col.lower() != 'is_open') and (col.lower() != 'subscriber_id'))]
     label_col_name = 'is_open'
-
+    #IS_CLASSIFIER_THRESH = 0.1
     if not(run_model): # Need to train new model
         if att_col_names is None:
             if not(df_train_X_Y is None):
@@ -259,6 +260,19 @@ def predict_by_model(df_test_X_Y, hr, doy=None, dow=None, df_train_X_Y=None, run
             X = df_train_X_Y[att_col_names].copy()
             Y = df_train_X_Y[label_col_name].copy()
 
+        if model_ == 'MODEL_XGB':
+            run_model = XGBClassifier(
+                learning_rate=0.1,
+                n_estimators=1000,
+                max_depth=4,
+                min_child_weight=10,
+                gamma=0,
+                colsample_bytree=0.8,
+                objective='binary:logistic',  # objective="rank:pairwise"
+                nthread=4,
+                scale_pos_weight=1,
+                seed=27)
+            model_name = 'Xgb'
         run_model.fit(X, Y)
 
     if run_model and att_col_names:
@@ -266,6 +280,18 @@ def predict_by_model(df_test_X_Y, hr, doy=None, dow=None, df_train_X_Y=None, run
         Y_test = df_test_X_Y[label_col_name].copy()
 
         Y_test_pred = run_model.predict(X_test)
+        Y_test_pred_proba = run_model.predict_proba(X_test)
+
+        if IS_CLASSIFIER_THRESH :
+            # Y_test_pred[:]= 0
+            # Adds 1's to predicted based on proba
+            if len(IS_CLASSIFIER_THRESH)==1:
+                Y_test_pred[Y_test_pred_proba[:,1] > IS_CLASSIFIER_THRESH] = 1
+            elif len(IS_CLASSIFIER_THRESH)>1:
+                Y_test_pred[(Y_test_pred_proba[:,1] > IS_CLASSIFIER_THRESH[1]) &
+                            (df_test_X_Y.is_open_sum == 0) ] = 1
+                Y_test_pred[(Y_test_pred_proba[:, 1] > IS_CLASSIFIER_THRESH[0]) &
+                            (df_test_X_Y.is_open_sum > 0)] = 1
     else:
         raise Exception("no Model / attributes list to run")
 
@@ -300,7 +326,7 @@ def predict_by_model(df_test_X_Y, hr, doy=None, dow=None, df_train_X_Y=None, run
 
     ls_subscriber_at_ts_hr = df_cp[df_cp['pred']=='is_open_'+str(hr)].subscriber_id
     ls_relevant_subscriber = df_test_X_Y[df_test_X_Y.is_open_sum > 0].subscriber_id
-    return ls_subscriber_at_ts_hr, df_cp, ls_relevant_subscriber, Y_test_pred
+    return ls_subscriber_at_ts_hr, df_cp, ls_relevant_subscriber, att_col_names, run_model
 
 
 
@@ -522,11 +548,13 @@ if CNVRT_AGG_HR_TO_DIST:
                              ((col.lower() != 'is_open') and (col.lower() != 'subscriber_id'))]
             label_col_name = 'is_open'
             pd.DataFrame(att_col_names).to_csv('att_col_names.csv')
-            if IS_CLASSIFIER_ALL == 2:
+            X = df_train_X_Y[att_col_names].copy()
+            Y = df_train_X_Y[label_col_name].copy()
+            if IS_CLASSIFIER_ALL == 2: # only NON historical
                 df_train_X_Y_nr = df_train_X_Y[df_train_X_Y.is_open_sum == 0].copy()
                 X = df_train_X_Y_nr[att_col_names].copy()
                 Y = df_train_X_Y_nr[label_col_name].copy()
-            elif IS_CLASSIFIER_ALL == 3:
+            elif IS_CLASSIFIER_ALL == 3: # only historical
                 df_train_X_Y_r = df_train_X_Y[df_train_X_Y.is_open_sum > 0].copy()
                 X = df_train_X_Y_r[att_col_names].copy()
                 Y = df_train_X_Y_r[label_col_name].copy()
@@ -588,7 +616,11 @@ for doy_val in range(FIRST_TEST_DOY, LAST_TEST_DOY+1):
                 ls_subscriber_at_ts_hr, df_train_dist_pred, ls_relevant_subscriber = predict_rand(df_train_dist_w_fst_hr, int(pred_ts_hour))
 
             if IS_CLASSIFIER:
-                if IS_CLASSIFIER_DAILY:  # then move this after the for
+                # initialize
+                df_test_X_Y_doy = df_test_X_Y[df_test_X_Y.ts_dayofyear == doy_val].copy()
+                df_train_X_Y_dow = df_train_X_Y.copy()
+
+                if IS_CLASSIFIER_DAILY:  # if daily then change train data to only that dow
                     # TODO fix that att_col_names are the ones from the train not new every time
                     att_col_names = [col for col in df_train_X_Y.columns if
                                      ((col.lower() != 'is_open') and (col.lower() != 'subscriber_id'))]
@@ -596,21 +628,29 @@ for doy_val in range(FIRST_TEST_DOY, LAST_TEST_DOY+1):
 
                     pred_dow = df_test_X_Y[df_test_X_Y.ts_dayofyear == doy_val].ts_dayofweek.unique()[0]
                     df_train_X_Y_dow = df_train_X_Y[df_train_X_Y.ts_dayofweek == pred_dow].copy()
+                    if IS_CLASSIFIER_ALL == 3:
+                        df_train_X_Y_dow = df_train_X_Y_dow[df_train_X_Y_dow.is_open_sum > 0].copy()
                     X = df_train_X_Y_dow[att_col_names].copy()
                     Y = df_train_X_Y_dow[label_col_name].copy()
 
-                    run_model.fit(X, Y)
+                    #run_model.fit(X, Y)
+                    # TODO change so that the predict_model is here with data for retrain
+                    # else its no retrain i.e. predict_model run + att no df_train
+                    #
+                    ls_subscriber_at_ts_hr, df_cp, ls_relevant_subscriber, att_col_names, run_model = \
+                        predict_by_model(df_test_X_Y_doy, int(pred_ts_hour), doy=None, dow=None, df_train_X_Y=df_train_X_Y_dow, run_model=None,
+                                         att_col_names=att_col_names)
 
-                df_test_X_Y_doy = df_test_X_Y[df_test_X_Y.ts_dayofyear == doy_val].copy()
 
-                X_test = df_test_X_Y_doy[att_col_names].copy()
-                Y_test = df_test_X_Y_doy[label_col_name].copy()
+                else:
+                    X_test = df_test_X_Y_doy[att_col_names].copy()
+                    Y_test = df_test_X_Y_doy[label_col_name].copy()
 
-                #Y_test_pred = run_model.predict(X_test)
-                # Expect run_model + att_col_names w/wo df_train, if no run_model then must be df_train w/wo att_col_names
-                ls_subscriber_at_ts_hr, df_cp, ls_relevant_subscriber, Y_test_pred_ = \
-                    predict_by_model(df_test_X_Y_doy, int(pred_ts_hour), doy=None, dow=None, df_train_X_Y=None, run_model=run_model,
-                                     att_col_names=att_col_names)
+                    # Expect run_model + att_col_names w/wo df_train, if no run_model then must be df_train w/wo att_col_names
+                    ls_subscriber_at_ts_hr, df_cp, ls_relevant_subscriber, att_col_names_, run_model_ = \
+                        predict_by_model(df_test_X_Y_doy, int(pred_ts_hour), doy=None, dow=None, df_train_X_Y=None, run_model=run_model,
+                                         att_col_names=att_col_names)
+
 
 
             if TEST_PREDICT_DIST:
@@ -632,7 +672,8 @@ for doy_val in range(FIRST_TEST_DOY, LAST_TEST_DOY+1):
                           + str(PREDICT_BY_SUBSCRIPTION_HOUR_RAND) \
                           + str(IS_CLASSIFIER) \
                           + str(IS_CLASSIFIER_DAILY) \
-                          + str(IS_CLASSIFIER_ALL)
+                          + str(IS_CLASSIFIER_ALL) \
+                          + str(IS_CLASSIFIER_THRESH)
 
                 df_label_cp.to_csv('results/lbl_pred_rnd' + exp_tag +  '_domain_{}_ts_{}_doy_{}_hr_{}_F1_{}.csv'.format(domain_id, datetime.datetime.utcnow().date(), doy_val, str(int(pred_ts_hour)), str(F1)))
                 df_train_dist_pred.to_csv('results/df_pred_rnd' + exp_tag + '_domain_{}_ts_{}_doy_{}_hr_{}_F1_{}.csv' \

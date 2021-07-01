@@ -30,10 +30,11 @@ IS_CLASSIFIER = 2
 DELTA_DAYS = 21
 DELTA_CLASSIFIER_LABELS = 7
 IS_CLASSIFIER_DAILY = 0
-IS_CLASSIFIER_ALL = 1 # 1 - ALL ; 2 - NON HISTORICAL ; 3 - ONLY HISTORICAL
-IS_CLASSIFIER_THRESH = [0.3, 0.05] # None # 0.1
-model_ = 'MODEL_XGB' # 'MODEL_CAT'
-
+IS_CLASSIFIER_ALL = 2 # 1 - ALL ; 2 - NON HISTORICAL ; 3 - ONLY HISTORICAL
+IS_CLASSIFIER_THRESH = [0.2, 0.05] # None # 0.1
+model_ = 'MODEL_XGB' #'MODEL_XGB' # 'MODEL_CAT'
+IS_CLASSIFIER_CATEGORICAL = 0 # 1
+CAT_FEATURES = ['ts_dayofweek']
 # ===========================
 #       Input
 # ===========================
@@ -292,16 +293,33 @@ def predict_by_model(df_test_X_Y, hr, doy=None, dow=None, df_train_X_Y=None, run
                                        learning_rate=1,
                                        loss_function='Logloss',
                                        verbose=True)
-            cat_features = [] # index of ts_dayofweek
+            #cat_features = ['ts_dayofweek'] # index of ts_dayofweek
             model_name = 'CatXgb'
-        run_model.fit(X, Y)
+
+        if (model_ == 'MODEL_CAT') and IS_CLASSIFIER_CATEGORICAL:
+            indx_cat_features = [i for i in range(len(att_col_names)) if
+                                 len(set([att_col_names[i]]).intersection(set(CAT_FEATURES)))]
+            X[CAT_FEATURES] = X[CAT_FEATURES].astype("|S")
+            run_model.fit(X, Y, cat_features=indx_cat_features)
+        else:
+            run_model.fit(X, Y)
 
     if run_model and att_col_names:
         X_test = df_test_X_Y[att_col_names].copy()
         Y_test = df_test_X_Y[label_col_name].copy()
 
-        Y_test_pred = run_model.predict(X_test)
-        Y_test_pred_proba = run_model.predict_proba(X_test)
+        if (model_ == 'MODEL_CAT') and IS_CLASSIFIER_CATEGORICAL:
+            #TODO make the model setting internal to predit
+
+            indx_cat_features = [i for i in range(len(att_col_names)) if
+                                 len(set([att_col_names[i]]).intersection(set(CAT_FEATURES)))]
+            X_test[CAT_FEATURES] = X_test[CAT_FEATURES].astype("|S")
+
+            Y_test_pred = run_model.predict(X_test)
+            Y_test_pred_proba = run_model.predict_proba(X_test)
+        else:
+            Y_test_pred = run_model.predict(X_test)
+            Y_test_pred_proba = run_model.predict_proba(X_test)
 
         if IS_CLASSIFIER_THRESH :
             # Y_test_pred[:]= 0
@@ -581,9 +599,11 @@ if CNVRT_AGG_HR_TO_DIST:
                                            learning_rate=1,
                                            loss_function='Logloss',
                                            verbose=True)
+            #cat_features = ['ts_dayofweek']  # index of ts_dayofweek
             model_name = 'CatXgb'
 
-        if IS_CLASSIFIER_ALL: # then move this after the for
+
+    if IS_CLASSIFIER_ALL: # then move this after the for
             # TODO fix that att_col_names are the ones from the train not new every time
             att_col_names = [col for col in df_train_X_Y.columns if
                              ((col.lower() != 'is_open') and (col.lower() != 'subscriber_id'))]
@@ -607,7 +627,15 @@ if CNVRT_AGG_HR_TO_DIST:
             X_test = df_test_X_Y[att_col_names].copy()
             Y_test = df_test_X_Y[label_col_name].copy()
 
-            run_model.fit(X, Y)
+#            run_model.fit(X, Y)
+            if (model_ == 'MODEL_CAT') and IS_CLASSIFIER_CATEGORICAL:
+                indx_cat_features = [i for i in range(len(att_col_names)) if
+                                     len(set([att_col_names[i]]).intersection(set(CAT_FEATURES)))]
+                X[CAT_FEATURES] = X[CAT_FEATURES].astype("|S")
+                run_model.fit(X, Y, cat_features=indx_cat_features)
+            else:
+                run_model.fit(X, Y)
+
 
 
 
@@ -689,8 +717,8 @@ for doy_val in range(FIRST_TEST_DOY, LAST_TEST_DOY+1):
 
                     # Expect run_model + att_col_names w/wo df_train, if no run_model then must be df_train w/wo att_col_names
                     ls_subscriber_at_ts_hr, df_cp, ls_relevant_subscriber, att_col_names_, run_model_ = \
-                        predict_by_model(df_test_X_Y_doy, int(pred_ts_hour), doy=None, dow=None, df_train_X_Y=None, run_model=run_model,
-                                         att_col_names=att_col_names)
+                        predict_by_model(df_test_X_Y_doy, int(pred_ts_hour), doy=None, dow=None
+                                         , df_train_X_Y=None, run_model=run_model, att_col_names=att_col_names)
 
 
 
@@ -715,6 +743,7 @@ for doy_val in range(FIRST_TEST_DOY, LAST_TEST_DOY+1):
                           + str(IS_CLASSIFIER_DAILY) \
                           + str(IS_CLASSIFIER_ALL) \
                           + str(IS_CLASSIFIER_THRESH) \
+                          + str(IS_CLASSIFIER_CATEGORICAL) \
                           + '_' + model_name
 
                 df_label_cp.to_csv('results/lbl_pred_rnd' + exp_tag +  '_domain_{}_ts_{}_doy_{}_hr_{}_F1_{}.csv'.format(domain_id, datetime.datetime.utcnow().date(), doy_val, str(int(pred_ts_hour)), str(F1)))

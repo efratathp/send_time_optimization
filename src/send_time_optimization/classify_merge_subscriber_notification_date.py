@@ -30,11 +30,24 @@ IS_CLASSIFIER = 2
 DELTA_DAYS = 21
 DELTA_CLASSIFIER_LABELS = 7
 IS_CLASSIFIER_DAILY = 0
-IS_CLASSIFIER_ALL = 2 # 1 - ALL ; 2 - NON HISTORICAL ; 3 - ONLY HISTORICAL
+IS_CLASSIFIER_ALL = 1 # 1 - ALL ; 2 - NON HISTORICAL ; 3 - ONLY HISTORICAL
 IS_CLASSIFIER_THRESH = [0.2, 0.05] # None # 0.1
-model_ = 'MODEL_XGB' #'MODEL_XGB' # 'MODEL_CAT'
-IS_CLASSIFIER_CATEGORICAL = 0 # 1
-CAT_FEATURES = ['ts_dayofweek']
+model_ = 'MODEL_CAT' #'MODEL_XGB' # 'MODEL_CAT'
+IS_CLASSIFIER_CATEGORICAL = 1 # 1
+CAT_FEATURES = ['ts_dayofweek', 'country_id', 'operating_system_id', 'browser_id' \
+                , 'device_id', 'operating_system_version',  'browser_version' \
+                , 'region_id', 'city_id', 'timezone_id', 'metro_code' \
+                , 'european_union', 'locale_language_id', 'locale_country_id']
+#CAT_FEATURES = ['ts_dayofweek']
+CAT_FEATURES_2ADD2X = ['country_id', 'operating_system_id', 'browser_id' \
+                , 'device_id', 'operating_system_version',  'browser_version' \
+                , 'region_id', 'city_id', 'timezone_id', 'metro_code' \
+                , 'european_union', 'locale_language_id', 'locale_country_id']
+CAT_FEATURES_2ADD_ = CAT_FEATURES_2ADD2X.copy() # None # CAT_FEATURES.copy() - dow is both int and str
+if CAT_FEATURES_2ADD_:
+    CAT_FEATURES_2ADD_.append('subscriber_id')
+
+
 # ===========================
 #       Input
 # ===========================
@@ -293,13 +306,13 @@ def predict_by_model(df_test_X_Y, hr, doy=None, dow=None, df_train_X_Y=None, run
                                        learning_rate=1,
                                        loss_function='Logloss',
                                        verbose=True)
-            #cat_features = ['ts_dayofweek'] # index of ts_dayofweek
             model_name = 'CatXgb'
 
         if (model_ == 'MODEL_CAT') and IS_CLASSIFIER_CATEGORICAL:
             indx_cat_features = [i for i in range(len(att_col_names)) if
                                  len(set([att_col_names[i]]).intersection(set(CAT_FEATURES)))]
-            X[CAT_FEATURES] = X[CAT_FEATURES].astype("|S")
+            for col_name in CAT_FEATURES:
+                X[col_name] = X[col_name].astype("|S")
             run_model.fit(X, Y, cat_features=indx_cat_features)
         else:
             run_model.fit(X, Y)
@@ -309,11 +322,12 @@ def predict_by_model(df_test_X_Y, hr, doy=None, dow=None, df_train_X_Y=None, run
         Y_test = df_test_X_Y[label_col_name].copy()
 
         if (model_ == 'MODEL_CAT') and IS_CLASSIFIER_CATEGORICAL:
-            #TODO make the model setting internal to predit
+            #TODO make the model setting internal to predict
 
             indx_cat_features = [i for i in range(len(att_col_names)) if
                                  len(set([att_col_names[i]]).intersection(set(CAT_FEATURES)))]
-            X_test[CAT_FEATURES] = X_test[CAT_FEATURES].astype("|S")
+            for col_name in CAT_FEATURES:
+                X_test[col_name] = X_test[col_name].astype("|S")
 
             Y_test_pred = run_model.predict(X_test)
             Y_test_pred_proba = run_model.predict_proba(X_test)
@@ -556,7 +570,7 @@ if CNVRT_AGG_HR_TO_DIST:
                                                  on='subscriber_id', suffixes=('', '_g'))
         df_test_21day_in_dist_fst_hr_agg = pd.merge(df_test_21day_in_dist_fst_hr, df_test_21day_in_agg_hr,
                                                  on='subscriber_id', suffixes=('', '_g'))
-
+        # TODO join CAT_FEATURES_2ADD2X to the _train_X_Y, _test_X_Y
         # Join feats on to labels
         df_train_X_Y = pd.merge(df_train_21day_labels_weekdays[['subscriber_id', 'ts_dayofweek', 'ts_hour', 'is_notify', 'is_open']],
             df_train_21day_in_dist_fst_hr_agg, on='subscriber_id', suffixes=('', '_x'))
@@ -565,6 +579,9 @@ if CNVRT_AGG_HR_TO_DIST:
         df_train_X_Y.to_csv('df_train_X_Y.csv')
         df_test_X_Y.to_csv('df_test_X_Y.csv')
 
+        if ((model_ == 'MODEL_CAT') and IS_CLASSIFIER_CATEGORICAL and CAT_FEATURES_2ADD_):
+            df_train_X_Y = pd.merge(df_train_X_Y, curr_domain_subscribers[CAT_FEATURES_2ADD_], on='subscriber_id', suffixes=('', '_x'))
+            df_test_X_Y = pd.merge(df_test_X_Y, curr_domain_subscribers[CAT_FEATURES_2ADD_], on='subscriber_id', suffixes=('', '_x'))
         # TODO generalize this to be .set_model_config()
 
         if model_ == 'MODEL_XGB':
@@ -599,7 +616,7 @@ if CNVRT_AGG_HR_TO_DIST:
                                            learning_rate=1,
                                            loss_function='Logloss',
                                            verbose=True)
-            #cat_features = ['ts_dayofweek']  # index of ts_dayofweek
+
             model_name = 'CatXgb'
 
 
@@ -631,7 +648,9 @@ if CNVRT_AGG_HR_TO_DIST:
             if (model_ == 'MODEL_CAT') and IS_CLASSIFIER_CATEGORICAL:
                 indx_cat_features = [i for i in range(len(att_col_names)) if
                                      len(set([att_col_names[i]]).intersection(set(CAT_FEATURES)))]
-                X[CAT_FEATURES] = X[CAT_FEATURES].astype("|S")
+
+                for col_name in CAT_FEATURES:
+                    X[col_name] = X[col_name].astype("|S")
                 run_model.fit(X, Y, cat_features=indx_cat_features)
             else:
                 run_model.fit(X, Y)
@@ -744,6 +763,7 @@ for doy_val in range(FIRST_TEST_DOY, LAST_TEST_DOY+1):
                           + str(IS_CLASSIFIER_ALL) \
                           + str(IS_CLASSIFIER_THRESH) \
                           + str(IS_CLASSIFIER_CATEGORICAL) \
+                          + '_noFtrs_' + str(len(CAT_FEATURES)) \
                           + '_' + model_name
 
                 df_label_cp.to_csv('results/lbl_pred_rnd' + exp_tag +  '_domain_{}_ts_{}_doy_{}_hr_{}_F1_{}.csv'.format(domain_id, datetime.datetime.utcnow().date(), doy_val, str(int(pred_ts_hour)), str(F1)))

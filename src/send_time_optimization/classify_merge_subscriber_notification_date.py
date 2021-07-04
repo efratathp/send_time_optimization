@@ -33,7 +33,7 @@ IS_CLASSIFIER_DAILY = 0
 IS_CLASSIFIER_ALL = 1 # 1 - ALL ; 2 - NON HISTORICAL ; 3 - ONLY HISTORICAL
 IS_CLASSIFIER_THRESH = [0.2, 0.05] # None # 0.1
 model_ = 'MODEL_CAT' #'MODEL_XGB' # 'MODEL_CAT'
-IS_CLASSIFIER_CATEGORICAL = 1 # 1
+IS_CLASSIFIER_CATEGORICAL = 0 # 1
 CAT_FEATURES = ['ts_dayofweek', 'country_id', 'operating_system_id', 'browser_id' \
                 , 'device_id', 'operating_system_version',  'browser_version' \
                 , 'region_id', 'city_id', 'timezone_id', 'metro_code' \

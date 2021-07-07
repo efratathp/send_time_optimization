@@ -14,8 +14,10 @@ with relevant_notifications as (
 		date_part('dow', send_at) ts_dayofweek,
 		sent, unique_impressions, unique_opened,
 		(unique_opened::decimal / sent::decimal * 100) as "unique_ctr"
+		, trigger_type_id, channel_type_id --= 2 --web_push only
+		, notification_status_type_id
 	from v2.active_notification an 
-	where send_at > now() - interval '90 day'
+	where send_at > now() - interval '190 day'
 	and send_at < now() - interval '30 min'
 	and domain_id in (
 		select id from service.active_domains ad2 where name in (

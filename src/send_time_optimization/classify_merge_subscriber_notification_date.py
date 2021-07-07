@@ -16,23 +16,32 @@ from catboost import CatBoostClassifier, Pool
 INCLUDE_USERS_WO_CLICK_HISTORY = False
 SPLIT_TRAIN_TEST_BY_DOY = 109
 KEEP_WEEKDAY_ONLY = True
+RUN_WEEKEND = 2
 CNVRT_AGG_HR_TO_DIST = True
 PREDICT_BY_DIST = True
 TEST_PREDICT_DIST = PREDICT_BY_DIST
-FIRST_TEST_DOY = 109
-LAST_TEST_DOY = 112
+if RUN_WEEKEND==1:
+    FIRST_TEST_DOY = 113
+    LAST_TEST_DOY = 115
+elif RUN_WEEKEND == 2:
+    FIRST_TEST_DOY = 109
+    LAST_TEST_DOY = 115
+else:
+    FIRST_TEST_DOY = 109
+    LAST_TEST_DOY = 112
+TEST_TRAIN = 1
 SEED = 1123456
 RUN_RAND = 0 #2
 PREDICT_BY_SUBSCRIPTION_HOUR = 0
 PREDICT_BY_SUBSCRIPTION_HOUR_RAND = 0
 HOUR_DELTA = 0
-IS_CLASSIFIER = 2
+IS_CLASSIFIER = 2 #2 #2 #0
 DELTA_DAYS = 21
 DELTA_CLASSIFIER_LABELS = 7
 IS_CLASSIFIER_DAILY = 0
 IS_CLASSIFIER_ALL = 1 # 1 - ALL ; 2 - NON HISTORICAL ; 3 - ONLY HISTORICAL
 IS_CLASSIFIER_THRESH = [0.2, 0.05] # None # 0.1
-model_ = 'MODEL_CAT' #'MODEL_XGB' # 'MODEL_CAT'
+model_ = 'MODEL_XGB' #'MODEL_XGB' # 'MODEL_CAT'
 IS_CLASSIFIER_CATEGORICAL = 0 # 1
 CAT_FEATURES = ['ts_dayofweek', 'country_id', 'operating_system_id', 'browser_id' \
                 , 'device_id', 'operating_system_version',  'browser_version' \
@@ -133,8 +142,14 @@ def agg_df_by_subscriber_hr(k1k2_n_s_c):
 
 
 # ====================== keep week days ==========================
-def keep_week_day_only(df):
-    return df[df.ts_dayofweek.isin([1, 2, 3, 4])]
+def keep_week_day_only(df, week_day_type=0):
+    # TODO REFACTOR
+    if week_day_type==1:
+        return df[df.ts_dayofweek.isin([0,5,6])]
+    elif week_day_type == 2:
+            return df
+    else:
+        return df[df.ts_dayofweek.isin([1, 2, 3, 4])]
 
 
 # ====================== MODELING ==========================
@@ -318,6 +333,10 @@ def predict_by_model(df_test_X_Y, hr, doy=None, dow=None, df_train_X_Y=None, run
             run_model.fit(X, Y)
 
     if run_model and att_col_names:
+        att_col_names_2add = [col for col in set(att_col_names).difference(set(df_test_X_Y.columns))]
+        if len(att_col_names_2add):
+            df_test_X_Y[att_col_names_2add] = 0
+
         X_test = df_test_X_Y[att_col_names].copy()
         Y_test = df_test_X_Y[label_col_name].copy()
 
@@ -520,17 +539,17 @@ if SPLIT_TRAIN_TEST_BY_DOY:
 #A:Friday and Saturday and Sunday. All the others are weekdays
 
 if KEEP_WEEKDAY_ONLY:
-    df_test = keep_week_day_only(df_test1)
-    df_train = keep_week_day_only(df_train1)
+    df_test = keep_week_day_only(df_test1, week_day_type=RUN_WEEKEND)
+    df_train = keep_week_day_only(df_train1, week_day_type=RUN_WEEKEND)
 
-    df_test2_noweekends = keep_week_day_only(df_test2) #todo change name to different
-    df_test21_noweekends = keep_week_day_only(df_test21) #todo change name to different
+    df_test2_noweekends = keep_week_day_only(df_test2, week_day_type=RUN_WEEKEND) #todo change name to different
+    df_test21_noweekends = keep_week_day_only(df_test21, week_day_type=RUN_WEEKEND) #todo change name to different
 
     if IS_CLASSIFIER: # saves time when not to run classifier
-        df_train_21day_labels_weekdays = keep_week_day_only(df_train_21day_labels)
-        df_train_21day_in_weekdays = keep_week_day_only(df_train_21day_in)
-        df_test_21day_labels_weekdays = keep_week_day_only(df_test_21day_labels)
-        df_test_21day_in_weekdays = keep_week_day_only(df_test_21day_in)
+        df_train_21day_labels_weekdays = keep_week_day_only(df_train_21day_labels, week_day_type=RUN_WEEKEND)
+        df_train_21day_in_weekdays = keep_week_day_only(df_train_21day_in, week_day_type=RUN_WEEKEND)
+        df_test_21day_labels_weekdays = keep_week_day_only(df_test_21day_labels, week_day_type=RUN_WEEKEND)
+        df_test_21day_in_weekdays = keep_week_day_only(df_test_21day_in, week_day_type=RUN_WEEKEND)
 
         # ====================== Apply Aggs ==========================
 
@@ -620,7 +639,7 @@ if CNVRT_AGG_HR_TO_DIST:
             model_name = 'CatXgb'
 
 
-    if IS_CLASSIFIER_ALL: # then move this after the for
+    if IS_CLASSIFIER_ALL: #IS_CLASSIFIER and IS_CLASSIFIER_ALL: # then move this after the for
             # TODO fix that att_col_names are the ones from the train not new every time
             att_col_names = [col for col in df_train_X_Y.columns if
                              ((col.lower() != 'is_open') and (col.lower() != 'subscriber_id'))]
@@ -641,6 +660,10 @@ if CNVRT_AGG_HR_TO_DIST:
                 X = df_train_X_Y[att_col_names].copy()
                 Y = df_train_X_Y[label_col_name].copy()
 
+
+            att_col_names_2add = [col for col in set(att_col_names).difference(set(df_test_X_Y.columns))]
+            if len(att_col_names_2add):
+                df_test_X_Y[att_col_names_2add] = 0
             X_test = df_test_X_Y[att_col_names].copy()
             Y_test = df_test_X_Y[label_col_name].copy()
 
@@ -671,8 +694,17 @@ if CNVRT_AGG_HR_TO_DIST:
 # ===========================
 #       Predict & Test
 # ===========================
+if TEST_TRAIN:
+    FIRST_TEST_DOY = 102
+    LAST_TEST_DOY = 108
+    df_train_X_Y = pd.merge(df_train_21day_labels_weekdays[['subscriber_id', 'ts_dayofweek', 'ts_hour', 'is_notify', 'is_open', 'ts_dayofyear']],
+        df_train_21day_in_dist_fst_hr_agg, on='subscriber_id', suffixes=('', '_x'))
+    df_test_X_Y = df_train_X_Y.copy()
+    df_test2 = df_train1.copy()
+    df_test2_noweekends = df_test2.copy()
+
 res = pd.DataFrame()
-for doy_val in range(FIRST_TEST_DOY, LAST_TEST_DOY+1):
+for doy_val in range(FIRST_TEST_DOY, LAST_TEST_DOY+1):#df_test2_noweekends.ts_dayofyear.unique():#
     if PREDICT_BY_DIST:
 
         # Get labels
@@ -761,10 +793,11 @@ for doy_val in range(FIRST_TEST_DOY, LAST_TEST_DOY+1):
                           + str(IS_CLASSIFIER) \
                           + str(IS_CLASSIFIER_DAILY) \
                           + str(IS_CLASSIFIER_ALL) \
+                          + str(KEEP_WEEKDAY_ONLY) + str(RUN_WEEKEND) \
                           + str(IS_CLASSIFIER_THRESH) \
                           + str(IS_CLASSIFIER_CATEGORICAL) \
                           + '_noFtrs_' + str(len(CAT_FEATURES)) \
-                          + '_' + model_name
+                          + '_' + model_name + str(TEST_TRAIN)
 
                 df_label_cp.to_csv('results/lbl_pred_rnd' + exp_tag +  '_domain_{}_ts_{}_doy_{}_hr_{}_F1_{}.csv'.format(domain_id, datetime.datetime.utcnow().date(), doy_val, str(int(pred_ts_hour)), str(F1)))
                 df_train_dist_pred.to_csv('results/df_pred_rnd' + exp_tag + '_domain_{}_ts_{}_doy_{}_hr_{}_F1_{}.csv' \

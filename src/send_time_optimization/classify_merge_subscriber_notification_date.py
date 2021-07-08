@@ -16,7 +16,7 @@ from catboost import CatBoostClassifier, Pool
 INCLUDE_USERS_WO_CLICK_HISTORY = False
 SPLIT_TRAIN_TEST_BY_DOY = 109
 KEEP_WEEKDAY_ONLY = True
-RUN_WEEKEND = 2
+RUN_WEEKEND = 2 # 0 weekday only # 1 weekend only # 3 all days 0-7
 CNVRT_AGG_HR_TO_DIST = True
 PREDICT_BY_DIST = True
 TEST_PREDICT_DIST = PREDICT_BY_DIST
@@ -31,16 +31,17 @@ else:
     LAST_TEST_DOY = 112
 TEST_TRAIN = 0
 SEED = 1123456
-RUN_RAND = 0 #2
+RUN_RAND = 2 #2 - rand check it works
 PREDICT_BY_SUBSCRIPTION_HOUR = 0
 PREDICT_BY_SUBSCRIPTION_HOUR_RAND = 0
 HOUR_DELTA = 0
-IS_CLASSIFIER = 2 #2 #2 #0
+IS_CLASSIFIER = 0 #2 #2 #0
 DELTA_DAYS = 21
 DELTA_CLASSIFIER_LABELS = 7
 IS_CLASSIFIER_DAILY = 0
 IS_CLASSIFIER_ALL = 1 # 1 - ALL ; 2 - NON HISTORICAL ; 3 - ONLY HISTORICAL
 IS_CLASSIFIER_THRESH = [0.2, 0.05] # None # 0.1
+model_name = ""
 model_ = 'MODEL_XGB' #'MODEL_XGB' # 'MODEL_CAT'
 IS_CLASSIFIER_CATEGORICAL = 0 # 1
 CAT_FEATURES = ['ts_dayofweek', 'country_id', 'operating_system_id', 'browser_id' \
@@ -60,7 +61,7 @@ if CAT_FEATURES_2ADD_:
 # ===========================
 #       Input
 # ===========================
-domain_id = 1274926143 #[ 308132225, 1274926143] joy,western
+domain_id = 308132225 #[ 308132225, 1274926143] joy,western
 fn_domain_notifications_date = 'data/relevant_notification_90days_202104281022.csv'
 fn_domain_subscribers = 'data/all_subscribers_of_2domains_202105052203.csv'
 if domain_id == 308132225:
@@ -639,7 +640,7 @@ if CNVRT_AGG_HR_TO_DIST:
             model_name = 'CatXgb'
 
 
-    if IS_CLASSIFIER_ALL: #IS_CLASSIFIER and IS_CLASSIFIER_ALL: # then move this after the for
+    if IS_CLASSIFIER and IS_CLASSIFIER_ALL: # then move this after the for
             # TODO fix that att_col_names are the ones from the train not new every time
             att_col_names = [col for col in df_train_X_Y.columns if
                              ((col.lower() != 'is_open') and (col.lower() != 'subscriber_id'))]

@@ -16,7 +16,7 @@ from catboost import CatBoostClassifier, Pool
 INCLUDE_USERS_WO_CLICK_HISTORY = False
 SPLIT_TRAIN_TEST_BY_DOY = 109
 KEEP_WEEKDAY_ONLY = True
-RUN_WEEKEND = 2 # 0 weekday only # 1 weekend only # 3 all days 0-7
+RUN_WEEKEND = 2 # 0 - weekday only # 1 - weekend only # 2 -  all days 0-7
 CNVRT_AGG_HR_TO_DIST = True
 PREDICT_BY_DIST = True
 TEST_PREDICT_DIST = PREDICT_BY_DIST
@@ -31,11 +31,11 @@ else:
     LAST_TEST_DOY = 112
 TEST_TRAIN = 0
 SEED = 1123456
-RUN_RAND = 2 #2 - rand check it works
+RUN_RAND = 0 #2 - random choose 1 by dist or default to uniform check it works
 PREDICT_BY_SUBSCRIPTION_HOUR = 0
 PREDICT_BY_SUBSCRIPTION_HOUR_RAND = 0
 HOUR_DELTA = 0
-IS_CLASSIFIER = 0 #2 #2 #0
+IS_CLASSIFIER = 2 #2 #0
 DELTA_DAYS = 21
 DELTA_CLASSIFIER_LABELS = 7
 IS_CLASSIFIER_DAILY = 0
@@ -61,7 +61,7 @@ if CAT_FEATURES_2ADD_:
 # ===========================
 #       Input
 # ===========================
-domain_id = 308132225 #[ 308132225, 1274926143] joy,western
+domain_id = 1274926143 #[ 308132225, 1274926143] joy,western
 fn_domain_notifications_date = 'data/relevant_notification_90days_202104281022.csv'
 fn_domain_subscribers = 'data/all_subscribers_of_2domains_202105052203.csv'
 if domain_id == 308132225:
